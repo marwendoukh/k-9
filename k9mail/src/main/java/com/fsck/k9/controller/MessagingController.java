@@ -1538,6 +1538,26 @@ public class MessagingController {
         }
     }
 
+    void syncMessageFlags(Account account, String folderName, Message remoteMessage) {
+        LocalFolder localFolder = null;
+        try {
+            localFolder = syncHelper.getOpenedLocalFolder(account, folderName);
+            LocalMessage localMessage = localFolder.getMessage(remoteMessage.getUid());
+            flagSyncHelper.syncFlags(localMessage, remoteMessage);
+            localFolder.close();
+
+            int unreadMessageCount = localFolder.getUnreadMessageCount();
+            for (MessagingListener l : getListeners()) {
+                l.folderStatusChanged(account, folderName, unreadMessageCount);
+            }
+        } catch (Exception e) {
+            Timber.e(e, "Unable to update local message flags");
+            addErrorMessage(account, null, e);
+        } finally {
+            closeFolder(localFolder);
+        }
+    }
+
     public void clearAllPending(final Account account) {
         try {
             Timber.w("Clearing pending commands!");

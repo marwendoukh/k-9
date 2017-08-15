@@ -1363,7 +1363,7 @@ public class ImapFolder extends Folder<ImapMessage> {
         return getName().hashCode();
     }
 
-    private ImapStore getStore() {
+    ImapStore getStore() {
         return store;
     }
 
