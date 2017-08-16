@@ -77,7 +77,6 @@ public class ImapSyncInteractorTest {
         syncInteractor = new ImapSyncInteractor(syncHelper, flagSyncHelper, controller, messageDownloader,
                 notificationController);
 
-        configureLocalStoreWithFolder();
         configureLocalFolder();
         configureImapStoreWithFolder(imapFolder);
         configureImapFolder();
@@ -275,13 +274,8 @@ public class ImapSyncInteractorTest {
         verify(imapFolder).close();
     }
 
-    private void configureLocalStoreWithFolder() throws MessagingException {
-        LocalStore localStore = mock(LocalStore.class);
-        when(account.getLocalStore()).thenReturn(localStore);
-        when(localStore.getFolder(FOLDER_NAME)).thenReturn(localFolder);
-    }
-
     private void configureLocalFolder() throws Exception {
+        when(syncHelper.getOpenedLocalFolder(account, FOLDER_NAME)).thenReturn(localFolder);
         when(localFolder.getName()).thenReturn(FOLDER_NAME);
         when(localFolder.hasCachedUidValidity()).thenReturn(true);
         when(localFolder.getUidValidity()).thenReturn(CACHED_UID_VALIDITY);
