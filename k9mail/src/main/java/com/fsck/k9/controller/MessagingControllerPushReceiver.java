@@ -16,12 +16,12 @@ import com.fsck.k9.mailstore.LocalStore;
 import com.fsck.k9.service.SleepService;
 import timber.log.Timber;
 
-public class MessagingControllerPushReceiver implements PushReceiver {
+class MessagingControllerPushReceiver implements PushReceiver {
     final Account account;
     final MessagingController controller;
     final Context context;
 
-    public MessagingControllerPushReceiver(Context context, Account nAccount, MessagingController nController) {
+    MessagingControllerPushReceiver(Context context, Account nAccount, MessagingController nController) {
         account = nAccount;
         controller = nController;
         this.context = context;

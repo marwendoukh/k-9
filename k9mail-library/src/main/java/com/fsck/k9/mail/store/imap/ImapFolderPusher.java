@@ -182,10 +182,10 @@ class ImapFolderPusher {
                     reacquireWakeLockAndCleanUp();
 
                     if (stop) {
-                        Timber.i("Got exception while idling, but stop is set for %s", getLogId());
+                        Timber.i(e, "Got exception while idling, but stop is set for %s", getLogId());
                     } else {
                         pushReceiver.pushError("Push error for " + getName(), e);
-                        Timber.e("Got exception while idling for %s", getLogId());
+                        Timber.e(e, "Got exception while idling for %s", getLogId());
 
                         pushReceiver.sleep(wakeLock, delayTime);
 
@@ -336,10 +336,6 @@ class ImapFolderPusher {
 
         @Override
         public void handleAsyncUntaggedResponse(ImapResponse response) throws IOException, MessagingException {
-            if (K9MailLib.isDebug()) {
-                Timber.v("Got async response: %s", response);
-            }
-
             if (stop) {
                 if (K9MailLib.isDebug()) {
                     Timber.d("Got async untagged response: %s, but stop is set for %s", response, getLogId());
@@ -440,19 +436,27 @@ class ImapFolderPusher {
 
     private boolean handleExpungeResponse(ImapResponse response) {
         int seqNum = response.getNumber(0);
+        boolean performSync = seqNum >= getSmallestSeqNum();
         if (K9MailLib.isDebug()) {
             Timber.d("Got untagged EXPUNGE for msgseq %d for %s", seqNum, getLogId());
+            if (!performSync) {
+                Timber.d("Message with seqnum %d for %s is too old", seqNum, getLogId());
+            }
         }
-        return seqNum >= getSmallestSeqNum();
+        return performSync;
     }
 
     private boolean handleFetchResponse(ImapResponse response) throws MessagingException {
         int seqNum = response.getNumber(0);
+        boolean performSync = seqNum >= getSmallestSeqNum();
         if (K9MailLib.isDebug()) {
             Timber.d("Got untagged FETCH for msgseq %d for %s", seqNum, getLogId());
+            if (!performSync) {
+                Timber.d("Message with seqnum %d for %s is too old", seqNum, getLogId());
+            }
         }
 
-        if (seqNum < getSmallestSeqNum()) {
+        if (!performSync) {
             return false;
         }
 
@@ -468,6 +472,11 @@ class ImapFolderPusher {
 
             pushReceiver.messageFlagsChanged(getName(), message);
             pushReceiver.highestModSeqChanged(getName(), modseq);
+
+            if (K9MailLib.isDebug()) {
+                Timber.d("Updating flags for local message with UID %s for %s", uid, getLogId());
+                Timber.d("Updating HIGHESTMODSEQ to %d for %s", modseq, getLogId());
+            }
 
             return false;
         }
