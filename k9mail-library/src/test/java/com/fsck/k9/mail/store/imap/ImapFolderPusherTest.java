@@ -2,6 +2,8 @@ package com.fsck.k9.mail.store.imap;
 
 
 import java.io.IOException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.locks.ReentrantLock;
 
 import android.content.Context;
 
@@ -42,6 +44,8 @@ public class ImapFolderPusherTest {
     @Mock
     private PushReceiver pushReceiver;
 
+    private CountDownLatch latch;
+
     @Before
     public void setUp() throws Exception {
         MockitoAnnotations.initMocks(this);
@@ -55,17 +59,21 @@ public class ImapFolderPusherTest {
 
     @Test
     public void processStoredUntaggedResponses_withExpungeResponse_shouldTriggerFolderSync() throws Exception {
+         latch = new CountDownLatch(1);
+
         doAnswer(new Answer() {
             @Override
             public Object answer(InvocationOnMock invocation) throws Throwable {
                 UntaggedHandler untaggedHandler = invocation.getArgumentAt(1, UntaggedHandler.class);
                 untaggedHandler.handleAsyncUntaggedResponse(createImapResponse("* 3 EXPUNGE"));
+                latch.countDown();
                 return null;
             }
         }).when(folder).executeSimpleCommand(eq(Commands.IDLE), any(UntaggedHandler.class));
 
         folderPusher.start();
 
+        latch.await();
         verify(pushReceiver).syncFolder(FOLDER_NAME);
     }
 
