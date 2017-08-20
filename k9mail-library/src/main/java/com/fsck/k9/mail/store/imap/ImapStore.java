@@ -116,6 +116,10 @@ public class ImapStore extends RemoteStore {
         return folder;
     }
 
+    ImapFolder getNewFolder(String name) {
+        return new ImapFolder(this, name);
+    }
+
     String getCombinedPrefix() {
         if (combinedPrefix == null) {
             if (pathPrefix != null) {

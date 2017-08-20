@@ -43,7 +43,7 @@ class ImapFolderPusher {
     ImapFolderPusher(ImapStore store, String folderName, PushReceiver pushReceiver) {
         this.pushReceiver = pushReceiver;
 
-        folder = new ImapFolder(store, folderName);
+        folder = store.getNewFolder(folderName);
         Context context = pushReceiver.getContext();
         TracingPowerManager powerManager = TracingPowerManager.getPowerManager(context);
         String tag = "ImapFolderPusher " + store.getStoreConfig().toString() + ":" + folderName;
@@ -165,7 +165,7 @@ class ImapFolderPusher {
 
                         ImapConnection conn = folder.getConnection();
                         setReadTimeoutForIdle(conn);
-                        sendIdle(conn);
+                        sendIdle();
 
                         returnFromIdle();
                     }
@@ -278,7 +278,7 @@ class ImapFolderPusher {
             idling = true;
         }
 
-        private void sendIdle(ImapConnection conn) throws MessagingException, IOException {
+        private void sendIdle() throws MessagingException, IOException {
             try {
                 try {
                     folder.executeSimpleCommand(Commands.IDLE, this);
@@ -286,7 +286,7 @@ class ImapFolderPusher {
                     idleStopper.stopAcceptingDoneContinuation();
                 }
             } catch (IOException e) {
-                conn.close();
+                folder.close();
                 throw e;
             }
         }
