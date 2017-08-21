@@ -104,10 +104,48 @@ class ImapFolderPusher {
         return folder.getName();
     }
 
-    private class PushRunnable implements Runnable, UntaggedHandler {
+    private class PushRunnable implements Runnable {
         private int delayTime = NORMAL_DELAY_TIME;
         private int idleFailureCount = 0;
         private boolean needsPoll = false;
+        private UntaggedHandler idleResponseHandler = new UntaggedHandler() {
+            @Override
+            public void handleAsyncUntaggedResponse(ImapResponse response) throws IOException, MessagingException {
+                if (stop) {
+                    if (K9MailLib.isDebug()) {
+                        Timber.d("Got async untagged response: %s, but stop is set for %s", response, getLogId());
+                    }
+
+                    connectionManager.stopIdle();
+                } else {
+                    if (response.getTag() == null) {
+                        if (response.size() > 1) {
+                            if (isUntaggedResponseSupported(response)) {
+                                wakeLock.acquire(PUSH_WAKE_LOCK_TIMEOUT);
+
+                                if (K9MailLib.isDebug()) {
+                                    Timber.d("Got useful async untagged response: %s for %s", response, getLogId());
+                                }
+
+                                synchronized (storedUntaggedResponses) {
+                                    storedUntaggedResponses.add(response);
+                                    if (!connectionManager.areMoreResponsesAvailable()) {
+                                        processStoredUntaggedResponses();
+                                    }
+                                }
+                            }
+                        } else if (response.isContinuationRequested()) {
+                            if (K9MailLib.isDebug()) {
+                                Timber.d("Idling %s", getLogId());
+                            }
+
+                            connectionManager.startAcceptingDoneContinuation();
+                            wakeLock.release();
+                        }
+                    }
+                }
+            }
+        };
 
         @Override
         public void run() {
@@ -279,7 +317,7 @@ class ImapFolderPusher {
         private void sendIdle() throws MessagingException, IOException {
             try {
                 try {
-                    folder.executeSimpleCommand(Commands.IDLE, this);
+                    folder.executeSimpleCommand(Commands.IDLE, idleResponseHandler);
                 } finally {
                     connectionManager.stopAcceptingDoneContinuation();
                 }
@@ -319,43 +357,6 @@ class ImapFolderPusher {
         private void setReadTimeoutForIdle() throws SocketException {
             int idleRefreshTimeout = folder.getStore().getStoreConfig().getIdleRefreshMinutes() * 60 * 1000;
             connectionManager.setReadTimeout(idleRefreshTimeout + IDLE_READ_TIMEOUT_INCREMENT);
-        }
-
-        @Override
-        public void handleAsyncUntaggedResponse(ImapResponse response) throws IOException, MessagingException {
-            if (stop) {
-                if (K9MailLib.isDebug()) {
-                    Timber.d("Got async untagged response: %s, but stop is set for %s", response, getLogId());
-                }
-
-                connectionManager.stopIdle();
-            } else {
-                if (response.getTag() == null) {
-                    if (response.size() > 1) {
-                        if (isUntaggedResponseSupported(response)) {
-                            wakeLock.acquire(PUSH_WAKE_LOCK_TIMEOUT);
-
-                            if (K9MailLib.isDebug()) {
-                                Timber.d("Got useful async untagged response: %s for %s", response, getLogId());
-                            }
-
-                            synchronized (storedUntaggedResponses) {
-                                storedUntaggedResponses.add(response);
-                                if (!connectionManager.areMoreResponsesAvailable()) {
-                                    processStoredUntaggedResponses();
-                                }
-                            }
-                        }
-                    } else if (response.isContinuationRequested()) {
-                        if (K9MailLib.isDebug()) {
-                            Timber.d("Idling %s", getLogId());
-                        }
-
-                        connectionManager.startAcceptingDoneContinuation();
-                        wakeLock.release();
-                    }
-                }
-            }
         }
 
         private void clearStoredUntaggedResponses() {
