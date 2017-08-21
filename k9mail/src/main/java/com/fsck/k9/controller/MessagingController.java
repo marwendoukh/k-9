@@ -1867,8 +1867,8 @@ public class MessagingController {
         }
     }
 
-    private void queueMoveOrCopy(Account account, String srcFolder, String destFolder, boolean isCopy,
-            List<String> uids) {
+    private void queueMoveOrCopy(Account account, String srcFolder, String destFolder,
+            boolean isCopy, List<String> uids) {
         if (account.getErrorFolderName().equals(srcFolder)) {
             return;
         }
@@ -1876,16 +1876,30 @@ public class MessagingController {
         queuePendingCommand(account, command);
     }
 
-    private void queueMoveOrCopy(Account account, String srcFolder, String destFolder,
+    private void queueMoveOrCopy(Account srcAccount, String srcFolder, Account destAccount, String destFolder,
             boolean isCopy, List<String> uids, Map<String, String> uidMap) {
         if (uidMap == null || uidMap.isEmpty()) {
-            queueMoveOrCopy(account, srcFolder, destFolder, isCopy, uids);
+            if (srcAccount.equals(destAccount)) {
+                queueMoveOrCopy(srcAccount, srcFolder, destFolder, isCopy, uids);
+            } else {
+                for (String uid : uids) {
+                    PendingCommand command = PendingAppend.create(destFolder, uid);
+                    queuePendingCommand(destAccount, command);
+                }
+            }
         } else {
-            if (account.getErrorFolderName().equals(srcFolder)) {
+            if (srcAccount.getErrorFolderName().equals(srcFolder)) {
                 return;
             }
-            PendingCommand command = PendingMoveOrCopy.create(srcFolder, destFolder, isCopy, uidMap);
-            queuePendingCommand(account, command);
+            if (srcAccount.equals(destAccount)) {
+                PendingCommand command = PendingMoveOrCopy.create(srcFolder, destFolder, isCopy, uidMap);
+                queuePendingCommand(srcAccount, command);
+            } else {
+                for (String uid : uidMap.values()) {
+                    PendingCommand command = PendingAppend.create(destFolder, uid);
+                    queuePendingCommand(destAccount, command);
+                }
+            }
         }
     }
 
@@ -3027,7 +3041,7 @@ public class MessagingController {
     }
 
     public void moveMessages(final Account srcAccount, final String srcFolder,
-            List<MessageReference> messageReferences, final String destFolder) {
+            List<MessageReference> messageReferences, final Account destAccount, final String destFolder) {
         actOnMessageGroup(srcAccount, srcFolder, messageReferences, new MessageActor() {
             @Override
             public void act(final Account account, LocalFolder messageFolder, final List<LocalMessage> messages) {
@@ -3036,7 +3050,7 @@ public class MessagingController {
                 putBackground("moveMessages", null, new Runnable() {
                     @Override
                     public void run() {
-                        moveOrCopyMessageSynchronous(account, srcFolder, messages, destFolder, false);
+                        moveOrCopyMessageSynchronous(account, srcFolder, messages, destAccount, destFolder, false);
                     }
                 });
             }
@@ -3044,7 +3058,7 @@ public class MessagingController {
     }
 
     public void moveMessagesInThread(Account srcAccount, final String srcFolder,
-            final List<MessageReference> messageReferences, final String destFolder) {
+            final List<MessageReference> messageReferences, final Account destAccount, final String destFolder) {
         actOnMessageGroup(srcAccount, srcFolder, messageReferences, new MessageActor() {
             @Override
             public void act(final Account account, LocalFolder messageFolder, final List<LocalMessage> messages) {
@@ -3055,7 +3069,8 @@ public class MessagingController {
                     public void run() {
                         try {
                             List<Message> messagesInThreads = collectMessagesInThreads(account, messages);
-                            moveOrCopyMessageSynchronous(account, srcFolder, messagesInThreads, destFolder, false);
+                            moveOrCopyMessageSynchronous(account, srcFolder, messagesInThreads, destAccount, destFolder,
+                                    false);
                         } catch (MessagingException e) {
                             addErrorMessage(account, "Exception while moving messages", e);
                         }
@@ -3067,18 +3082,18 @@ public class MessagingController {
 
     public void moveMessage(final Account account, final String srcFolder, final MessageReference message,
             final String destFolder) {
-        moveMessages(account, srcFolder, Collections.singletonList(message), destFolder);
+        moveMessages(account, srcFolder, Collections.singletonList(message), account, destFolder);
     }
 
     public void copyMessages(final Account srcAccount, final String srcFolder,
-            final List<MessageReference> messageReferences, final String destFolder) {
+            final List<MessageReference> messageReferences, final Account destAccount, final String destFolder) {
         actOnMessageGroup(srcAccount, srcFolder, messageReferences, new MessageActor() {
             @Override
             public void act(final Account account, LocalFolder messageFolder, final List<LocalMessage> messages) {
                 putBackground("copyMessages", null, new Runnable() {
                     @Override
                     public void run() {
-                        moveOrCopyMessageSynchronous(srcAccount, srcFolder, messages, destFolder, true);
+                        moveOrCopyMessageSynchronous(srcAccount, srcFolder, messages, destAccount, destFolder, true);
                     }
                 });
             }
@@ -3086,7 +3101,7 @@ public class MessagingController {
     }
 
     public void copyMessagesInThread(Account srcAccount, final String srcFolder,
-            final List<MessageReference> messageReferences, final String destFolder) {
+            final List<MessageReference> messageReferences, final Account destAccount, final String destFolder) {
         actOnMessageGroup(srcAccount, srcFolder, messageReferences, new MessageActor() {
             @Override
             public void act(final Account account, LocalFolder messageFolder, final List<LocalMessage> messages) {
@@ -3095,7 +3110,7 @@ public class MessagingController {
                     public void run() {
                         try {
                             List<Message> messagesInThreads = collectMessagesInThreads(account, messages);
-                            moveOrCopyMessageSynchronous(account, srcFolder, messagesInThreads, destFolder,
+                            moveOrCopyMessageSynchronous(account, srcFolder, messagesInThreads, destAccount, destFolder,
                                     true);
                         } catch (MessagingException e) {
                             addErrorMessage(account, "Exception while copying messages", e);
@@ -3109,24 +3124,30 @@ public class MessagingController {
     public void copyMessage(final Account account, final String srcFolder, final MessageReference message,
             final String destFolder) {
 
-        copyMessages(account, srcFolder, Collections.singletonList(message), destFolder);
+        copyMessages(account, srcFolder, Collections.singletonList(message), account, destFolder);
     }
 
-    private void moveOrCopyMessageSynchronous(final Account account, final String srcFolder,
-            final List<? extends Message> inMessages, final String destFolder, final boolean isCopy) {
+    private void moveOrCopyMessageSynchronous(final Account srcAccount, final String srcFolder,
+            final List<? extends Message> inMessages, final Account destAccount, final String destFolder,
+            final boolean isCopy) {
 
         try {
-            LocalStore localStore = account.getLocalStore();
-            Store remoteStore = account.getRemoteStore();
-            if (!isCopy && (!remoteStore.isMoveCapable() || !localStore.isMoveCapable())) {
+            LocalStore srcLocalStore = srcAccount.getLocalStore();
+            Store srcRemoteStore = srcAccount.getRemoteStore();
+            LocalStore destLocalStore = destAccount.getLocalStore();
+            Store destRemoteStore = destAccount.getRemoteStore();
+
+            if (!isCopy && (!srcRemoteStore.isMoveCapable() || !srcLocalStore.isMoveCapable() ||
+                    !destRemoteStore.isMoveCapable() || !destLocalStore.isMoveCapable())) {
                 return;
             }
-            if (isCopy && (!remoteStore.isCopyCapable() || !localStore.isCopyCapable())) {
+            if (isCopy && (!srcRemoteStore.isCopyCapable() || !srcLocalStore.isCopyCapable() ||
+                    !destRemoteStore.isCopyCapable() || !destLocalStore.isCopyCapable())) {
                 return;
             }
 
-            LocalFolder localSrcFolder = localStore.getFolder(srcFolder);
-            Folder localDestFolder = localStore.getFolder(destFolder);
+            LocalFolder localSrcFolder = srcLocalStore.getFolder(srcFolder);
+            LocalFolder localDestFolder = destLocalStore.getFolder(destFolder);
 
             boolean unreadCountAffected = false;
             List<String> uids = new LinkedList<>();
@@ -3149,8 +3170,9 @@ public class MessagingController {
                     origUidMap.put(message.getUid(), message);
                 }
 
-                Timber.i("moveOrCopyMessageSynchronous: source folder = %s, %d messages, destination folder = %s, " +
-                        "isCopy = %s", srcFolder, messages.size(), destFolder, isCopy);
+                Timber.i("moveOrCopyMessageSynchronous: source account = %s, source folder = %s, %d messages, " +
+                        "destination account = %s, destination folder = %s, isCopy = %s", srcAccount.getName(),
+                        srcFolder, messages.size(), destAccount.getName(), destFolder, isCopy);
 
                 Map<String, String> uidMap;
 
@@ -3166,7 +3188,7 @@ public class MessagingController {
                         // folder, notify the listeners.
                         int unreadMessageCount = localDestFolder.getUnreadMessageCount();
                         for (MessagingListener l : getListeners()) {
-                            l.folderStatusChanged(account, destFolder, unreadMessageCount);
+                            l.folderStatusChanged(srcAccount, destFolder, unreadMessageCount);
                         }
                     }
                 } else {
@@ -3175,10 +3197,10 @@ public class MessagingController {
                         String origUid = entry.getKey();
                         Message message = entry.getValue();
                         for (MessagingListener l : getListeners()) {
-                            l.messageUidChanged(account, srcFolder, origUid, message.getUid());
+                            l.messageUidChanged(srcAccount, srcFolder, origUid, message.getUid());
                         }
                     }
-                    unsuppressMessages(account, messages);
+                    unsuppressMessages(srcAccount, messages);
 
                     if (unreadCountAffected) {
                         // If this move operation changes the unread count, notify the listeners
@@ -3186,22 +3208,23 @@ public class MessagingController {
                         int unreadMessageCountSrc = localSrcFolder.getUnreadMessageCount();
                         int unreadMessageCountDest = localDestFolder.getUnreadMessageCount();
                         for (MessagingListener l : getListeners()) {
-                            l.folderStatusChanged(account, srcFolder, unreadMessageCountSrc);
-                            l.folderStatusChanged(account, destFolder, unreadMessageCountDest);
+                            l.folderStatusChanged(srcAccount, srcFolder, unreadMessageCountSrc);
+                            l.folderStatusChanged(srcAccount, destFolder, unreadMessageCountDest);
                         }
                     }
                 }
 
                 List<String> origUidKeys = new ArrayList<>(origUidMap.keySet());
-                queueMoveOrCopy(account, srcFolder, destFolder, isCopy, origUidKeys, uidMap);
+                queueMoveOrCopy(srcAccount, srcFolder, destAccount, destFolder, isCopy, origUidKeys, uidMap);
             }
 
-            processPendingCommands(account);
+            processPendingCommands(srcAccount);
+            processPendingCommandsSynchronous(destAccount);
         } catch (UnavailableStorageException e) {
             Timber.i("Failed to move/copy message because storage is not available - trying again later.");
             throw new UnavailableAccountException(e);
         } catch (MessagingException me) {
-            addErrorMessage(account, null, me);
+            addErrorMessage(srcAccount, null, me);
 
             throw new RuntimeException("Error moving message", me);
         }
@@ -3390,7 +3413,7 @@ public class MessagingController {
                 if (folder.equals(account.getTrashFolderName())) {
                     queueSetFlag(account, folder, true, Flag.DELETED, uids);
                 } else {
-                    queueMoveOrCopy(account, folder, account.getTrashFolderName(), false, uids, uidMap);
+                    queueMoveOrCopy(account, folder, account, account.getTrashFolderName(), false, uids, uidMap);
                 }
                 processPendingCommands(account);
             } else if (account.getDeletePolicy() == DeletePolicy.MARK_AS_READ) {

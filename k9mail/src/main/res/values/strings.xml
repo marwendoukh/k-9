@@ -98,6 +98,7 @@ Please submit bug reports, contribute new features and ask questions at
     <string name="compose_title_reply_all">Reply all</string>
     <string name="compose_title_forward">Forward</string>
 
+    <string name="choose_account_title">Choose Account</string>
     <string name="choose_folder_title">Choose Folder</string>
 
     <string name="status_loading_account_folder">Poll <xliff:g id="account">%s</xliff:g>:<xliff:g id="folder">%s</xliff:g><xliff:g id="progress">%s</xliff:g></string>
