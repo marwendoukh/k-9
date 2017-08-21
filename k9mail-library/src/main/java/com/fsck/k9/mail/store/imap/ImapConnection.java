@@ -611,10 +611,6 @@ public class ImapConnection {
         }
     }
 
-    boolean isQresyncEnabled() {
-        return qresyncEnabled;
-    }
-
     private void retrievePathPrefixIfNecessary() throws IOException, MessagingException {
         if (settings.getPathPrefix() != null) {
             return;
@@ -811,7 +807,7 @@ public class ImapConnection {
         }
     }
 
-    public void sendContinuation(String continuation) throws IOException {
+    void sendContinuation(String continuation) throws IOException {
         outputStream.write(continuation.getBytes());
         outputStream.write('\r');
         outputStream.write('\n');

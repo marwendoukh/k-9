@@ -16,7 +16,6 @@ import com.fsck.k9.mail.MessagingException;
 import com.fsck.k9.mail.PushReceiver;
 import com.fsck.k9.mail.power.TracingPowerManager;
 import com.fsck.k9.mail.power.TracingPowerManager.TracingWakeLock;
-import com.fsck.k9.mail.store.RemoteStore;
 import timber.log.Timber;
 
 import static com.fsck.k9.mail.Folder.OPEN_MODE_RO;
@@ -33,7 +32,7 @@ class ImapFolderPusher {
     private final ImapFolder folder;
     private final PushReceiver pushReceiver;
     private final Object threadLock = new Object();
-    private final IdleStopper idleStopper = new IdleStopper();
+    private IdleConnectionManager connectionManager;
     private final TracingWakeLock wakeLock;
     private final List<ImapResponse> storedUntaggedResponses = new ArrayList<>();
     private Thread listeningThread;
@@ -65,7 +64,7 @@ class ImapFolderPusher {
     public void refresh() throws IOException, MessagingException {
         if (idling) {
             wakeLock.acquire(PUSH_WAKE_LOCK_TIMEOUT);
-            idleStopper.stopIdle();
+            connectionManager.stopIdle();
         }
     }
 
@@ -163,8 +162,7 @@ class ImapFolderPusher {
 
                         prepareForIdle();
 
-                        ImapConnection conn = folder.getConnection();
-                        setReadTimeoutForIdle(conn);
+                        setReadTimeoutForIdle();
                         sendIdle();
 
                         returnFromIdle();
@@ -283,7 +281,7 @@ class ImapFolderPusher {
                 try {
                     folder.executeSimpleCommand(Commands.IDLE, this);
                 } finally {
-                    idleStopper.stopAcceptingDoneContinuation();
+                    connectionManager.stopAcceptingDoneContinuation();
                 }
             } catch (IOException e) {
                 folder.close();
@@ -297,41 +295,30 @@ class ImapFolderPusher {
             idleFailureCount = 0;
         }
 
-        private boolean openConnectionIfNecessary() throws MessagingException {
-            ImapConnection oldConnection = folder.getConnection();
+        private boolean openConnectionIfNecessary() throws IOException, MessagingException {
+            boolean openedConnection = !folder.isOpen();
             folder.open(OPEN_MODE_RO);
+            connectionManager = folder.createIdleConnectionManager();
 
-            ImapConnection conn = folder.getConnection();
+            checkConnectionIdleCapable();
 
-            checkConnectionNotNull(conn);
-            checkConnectionIdleCapable(conn);
-
-            return conn != oldConnection;
+            return openedConnection;
         }
 
-        private void checkConnectionNotNull(ImapConnection conn) throws MessagingException {
-            if (conn == null) {
-                String message = "Could not establish connection for IDLE";
-                pushReceiver.pushError(message, null);
-
-                throw new MessagingException(message);
-            }
-        }
-
-        private void checkConnectionIdleCapable(ImapConnection conn) throws MessagingException {
-            if (!conn.isIdleCapable()) {
+        private void checkConnectionIdleCapable() throws IOException, MessagingException {
+            if (!connectionManager.hasIdleCapability()) {
                 stop = true;
 
-                String message = "IMAP server is not IDLE capable: " + conn.toString();
+                String message = "IMAP server is not IDLE capable: " + getLogId();
                 pushReceiver.pushError(message, null);
 
                 throw new MessagingException(message);
             }
         }
 
-        private void setReadTimeoutForIdle(ImapConnection conn) throws SocketException {
+        private void setReadTimeoutForIdle() throws SocketException {
             int idleRefreshTimeout = folder.getStore().getStoreConfig().getIdleRefreshMinutes() * 60 * 1000;
-            conn.setReadTimeout(idleRefreshTimeout + IDLE_READ_TIMEOUT_INCREMENT);
+            connectionManager.setReadTimeout(idleRefreshTimeout + IDLE_READ_TIMEOUT_INCREMENT);
         }
 
         @Override
@@ -341,7 +328,7 @@ class ImapFolderPusher {
                     Timber.d("Got async untagged response: %s, but stop is set for %s", response, getLogId());
                 }
 
-                idleStopper.stopIdle();
+                connectionManager.stopIdle();
             } else {
                 if (response.getTag() == null) {
                     if (response.size() > 1) {
@@ -354,7 +341,7 @@ class ImapFolderPusher {
 
                             synchronized (storedUntaggedResponses) {
                                 storedUntaggedResponses.add(response);
-                                if (!folder.getConnection().areMoreResponsesAvailable()) {
+                                if (!connectionManager.areMoreResponsesAvailable()) {
                                     processStoredUntaggedResponses();
                                 }
                             }
@@ -364,7 +351,7 @@ class ImapFolderPusher {
                             Timber.d("Idling %s", getLogId());
                         }
 
-                        idleStopper.startAcceptingDoneContinuation(folder.getConnection());
+                        connectionManager.startAcceptingDoneContinuation();
                         wakeLock.release();
                     }
                 }
@@ -377,7 +364,7 @@ class ImapFolderPusher {
             }
         }
 
-        private void processStoredUntaggedResponses() throws MessagingException {
+        private void processStoredUntaggedResponses() throws IOException, MessagingException {
             List<ImapResponse> untaggedResponses = getAndClearStoredUntaggedResponses();
 
             if (K9MailLib.isDebug()) {
@@ -446,7 +433,7 @@ class ImapFolderPusher {
         return performSync;
     }
 
-    private boolean handleFetchResponse(ImapResponse response) throws MessagingException {
+    private boolean handleFetchResponse(ImapResponse response) throws IOException, MessagingException {
         int seqNum = response.getNumber(0);
         boolean performSync = seqNum >= getSmallestSeqNum();
         if (K9MailLib.isDebug()) {
@@ -460,7 +447,7 @@ class ImapFolderPusher {
             return false;
         }
 
-        if (folder.getConnection().isQresyncEnabled()) {
+        if (folder.doesConnectionSupportQresync()) {
             ImapStore store = folder.getStore();
             ImapList fetchList = (ImapList) response.getKeyedValue("FETCH");
 
@@ -497,44 +484,5 @@ class ImapFolderPusher {
             Timber.d("Got untagged VANISHED for UIDs %s for %s", vanishedUidsString, getLogId());
         }
         return true;
-    }
-
-    /**
-     * Ensure the DONE continuation is only sent when the IDLE command was sent and hasn't completed yet.
-     */
-    private static class IdleStopper {
-        private boolean acceptDoneContinuation = false;
-        private ImapConnection imapConnection;
-
-
-        synchronized void startAcceptingDoneContinuation(ImapConnection connection) {
-            if (connection == null) {
-                throw new NullPointerException("connection must not be null");
-            }
-
-            acceptDoneContinuation = true;
-            imapConnection = connection;
-        }
-
-        synchronized void stopAcceptingDoneContinuation() {
-            acceptDoneContinuation = false;
-            imapConnection = null;
-        }
-
-        synchronized void stopIdle() {
-            if (acceptDoneContinuation) {
-                acceptDoneContinuation = false;
-                sendDone();
-            }
-        }
-
-        private void sendDone() {
-            try {
-                imapConnection.setReadTimeout(RemoteStore.SOCKET_READ_TIMEOUT);
-                imapConnection.sendContinuation("DONE");
-            } catch (IOException e) {
-                imapConnection.close();
-            }
-        }
     }
 }

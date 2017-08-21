@@ -115,7 +115,7 @@ public class ImapFolder extends Folder<ImapMessage> {
         return handleUntaggedResponses(connection.executeSimpleCommand(command));
     }
 
-    public List<ImapResponse> executeSimpleCommand(String command, UntaggedHandler untaggedHandler)
+    List<ImapResponse> executeSimpleCommand(String command, UntaggedHandler untaggedHandler)
             throws MessagingException, IOException {
         String tag = connection.sendCommand(command, false);
         return connection.readStatusResponse(tag, command, untaggedHandler);
@@ -449,6 +449,10 @@ public class ImapFolder extends Folder<ImapMessage> {
 
     public long getHighestModSeq() {
         return highestModSeq;
+    }
+
+    IdleConnectionManager createIdleConnectionManager() {
+        return new IdleConnectionManager(connection);
     }
 
     private int getRemoteMessageCount(Set<Flag> requiredFlags, Set<Flag> forbiddenFlags) throws MessagingException {
@@ -1369,10 +1373,6 @@ public class ImapFolder extends Folder<ImapMessage> {
 
     Set<Flag> getPermanentFlags() {
         return getStore().getPermanentFlagsIndex();
-    }
-
-    ImapConnection getConnection() {
-        return connection;
     }
 
     protected String getLogId() {
