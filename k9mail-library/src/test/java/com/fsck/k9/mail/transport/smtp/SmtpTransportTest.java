@@ -19,7 +19,7 @@ import com.fsck.k9.mail.filter.Base64;
 import com.fsck.k9.mail.helpers.TestMessageBuilder;
 import com.fsck.k9.mail.helpers.TestTrustedSocketFactory;
 import com.fsck.k9.mail.internet.MimeMessage;
-import com.fsck.k9.mail.oauth.OAuth2TokenProvider;
+import com.fsck.k9.mail.oauth.OAuth2AuthorizationCodeFlowTokenProvider;
 import com.fsck.k9.mail.ssl.TrustedSocketFactory;
 import com.fsck.k9.mail.store.StoreConfig;
 import com.fsck.k9.mail.transport.mockServer.MockSmtpServer;
@@ -48,14 +48,14 @@ public class SmtpTransportTest {
 
     
     private TrustedSocketFactory socketFactory;
-    private OAuth2TokenProvider oAuth2TokenProvider;
+    private OAuth2AuthorizationCodeFlowTokenProvider oAuth2AuthorizationCodeFlowTokenProvider;
 
     
     @Before
     public void before() throws AuthenticationFailedException, OAuth2NeedUserPromptException {
         socketFactory = TestTrustedSocketFactory.newInstance();
-        oAuth2TokenProvider = mock(OAuth2TokenProvider.class);
-        when(oAuth2TokenProvider.getToken(eq(USERNAME), anyInt()))
+        oAuth2AuthorizationCodeFlowTokenProvider = mock(OAuth2AuthorizationCodeFlowTokenProvider.class);
+        when(oAuth2AuthorizationCodeFlowTokenProvider.getToken(eq(USERNAME), anyInt()))
                 .thenReturn("oldToken").thenReturn("newToken");
     }
 
@@ -63,14 +63,14 @@ public class SmtpTransportTest {
     public void SmtpTransport_withValidTransportUri() throws Exception {
         StoreConfig storeConfig = createStoreConfigWithTransportUri("smtp://user:password:CRAM_MD5@server:123456");
 
-        new SmtpTransport(storeConfig, socketFactory, oAuth2TokenProvider);
+        new SmtpTransport(storeConfig, socketFactory, oAuth2AuthorizationCodeFlowTokenProvider);
     }
 
     @Test(expected = MessagingException.class)
     public void SmtpTransport_withInvalidTransportUri_shouldThrow() throws Exception {
         StoreConfig storeConfig = createStoreConfigWithTransportUri("smpt://");
 
-        new SmtpTransport(storeConfig, socketFactory, oAuth2TokenProvider);
+        new SmtpTransport(storeConfig, socketFactory, oAuth2AuthorizationCodeFlowTokenProvider);
     }
 
     @Test
@@ -232,9 +232,9 @@ public class SmtpTransportTest {
                     e.getMessage());
         }
 
-        InOrder inOrder = inOrder(oAuth2TokenProvider);
-        inOrder.verify(oAuth2TokenProvider).getToken(eq(USERNAME), anyInt());
-        inOrder.verify(oAuth2TokenProvider).invalidateAccessToken(USERNAME);
+        InOrder inOrder = inOrder(oAuth2AuthorizationCodeFlowTokenProvider);
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).getToken(eq(USERNAME), anyInt());
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).invalidateAccessToken(USERNAME);
         server.verifyConnectionClosed();
         server.verifyInteractionCompleted();
     }
@@ -257,10 +257,10 @@ public class SmtpTransportTest {
 
         transport.open();
 
-        InOrder inOrder = inOrder(oAuth2TokenProvider);
-        inOrder.verify(oAuth2TokenProvider).getToken(eq(USERNAME), anyInt());
-        inOrder.verify(oAuth2TokenProvider).invalidateAccessToken(USERNAME);
-        inOrder.verify(oAuth2TokenProvider).getToken(eq(USERNAME), anyInt());
+        InOrder inOrder = inOrder(oAuth2AuthorizationCodeFlowTokenProvider);
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).getToken(eq(USERNAME), anyInt());
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).invalidateAccessToken(USERNAME);
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).getToken(eq(USERNAME), anyInt());
         server.verifyConnectionStillOpen();
         server.verifyInteractionCompleted();
     }
@@ -283,10 +283,10 @@ public class SmtpTransportTest {
 
         transport.open();
 
-        InOrder inOrder = inOrder(oAuth2TokenProvider);
-        inOrder.verify(oAuth2TokenProvider).getToken(eq(USERNAME), anyInt());
-        inOrder.verify(oAuth2TokenProvider).invalidateAccessToken(USERNAME);
-        inOrder.verify(oAuth2TokenProvider).getToken(eq(USERNAME), anyInt());
+        InOrder inOrder = inOrder(oAuth2AuthorizationCodeFlowTokenProvider);
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).getToken(eq(USERNAME), anyInt());
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).invalidateAccessToken(USERNAME);
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).getToken(eq(USERNAME), anyInt());
         server.verifyConnectionStillOpen();
         server.verifyInteractionCompleted();
     }
@@ -309,10 +309,10 @@ public class SmtpTransportTest {
 
         transport.open();
 
-        InOrder inOrder = inOrder(oAuth2TokenProvider);
-        inOrder.verify(oAuth2TokenProvider).getToken(eq(USERNAME), anyInt());
-        inOrder.verify(oAuth2TokenProvider).invalidateAccessToken(USERNAME);
-        inOrder.verify(oAuth2TokenProvider).getToken(eq(USERNAME), anyInt());
+        InOrder inOrder = inOrder(oAuth2AuthorizationCodeFlowTokenProvider);
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).getToken(eq(USERNAME), anyInt());
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).invalidateAccessToken(USERNAME);
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).getToken(eq(USERNAME), anyInt());
         server.verifyConnectionStillOpen();
         server.verifyInteractionCompleted();
     }
@@ -362,7 +362,7 @@ public class SmtpTransportTest {
         server.output("250 AUTH XOAUTH2");
         server.expect("QUIT");
         server.output("221 BYE");
-        when(oAuth2TokenProvider.getToken(anyString(), anyInt())).thenThrow(new AuthenticationFailedException("Failed to fetch token"));
+        when(oAuth2AuthorizationCodeFlowTokenProvider.getToken(anyString(), anyInt())).thenThrow(new AuthenticationFailedException("Failed to fetch token"));
         SmtpTransport transport = startServerAndCreateSmtpTransport(server, AuthType.XOAUTH2, ConnectionSecurity.NONE);
 
         try {
@@ -525,9 +525,9 @@ public class SmtpTransportTest {
                     e.getMessage());
         }
 
-        InOrder inOrder = inOrder(oAuth2TokenProvider);
-        inOrder.verify(oAuth2TokenProvider).getToken(eq(USERNAME), anyInt());
-        inOrder.verify(oAuth2TokenProvider).invalidateAccessToken(USERNAME);
+        InOrder inOrder = inOrder(oAuth2AuthorizationCodeFlowTokenProvider);
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).getToken(eq(USERNAME), anyInt());
+        inOrder.verify(oAuth2AuthorizationCodeFlowTokenProvider).invalidateAccessToken(USERNAME);
         server.verifyConnectionClosed();
         server.verifyInteractionCompleted();
     }
@@ -722,7 +722,7 @@ public class SmtpTransportTest {
         String uri = SmtpTransport.createUri(serverSettings);
         StoreConfig storeConfig = createStoreConfigWithTransportUri(uri);
 
-        return new TestSmtpTransport(storeConfig, socketFactory, oAuth2TokenProvider);
+        return new TestSmtpTransport(storeConfig, socketFactory, oAuth2AuthorizationCodeFlowTokenProvider);
     }
 
     private StoreConfig createStoreConfigWithTransportUri(String value) {
@@ -761,9 +761,9 @@ public class SmtpTransportTest {
     
     
     static class TestSmtpTransport extends SmtpTransport {
-        TestSmtpTransport(StoreConfig storeConfig, TrustedSocketFactory trustedSocketFactory, OAuth2TokenProvider oAuth2TokenProvider)
+        TestSmtpTransport(StoreConfig storeConfig, TrustedSocketFactory trustedSocketFactory, OAuth2AuthorizationCodeFlowTokenProvider oAuth2AuthorizationCodeFlowTokenProvider)
                 throws MessagingException {
-            super(storeConfig, trustedSocketFactory, oAuth2TokenProvider);
+            super(storeConfig, trustedSocketFactory, oAuth2AuthorizationCodeFlowTokenProvider);
         }
 
         @Override

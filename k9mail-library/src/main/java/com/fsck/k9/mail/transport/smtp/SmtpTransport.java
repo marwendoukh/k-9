@@ -43,6 +43,7 @@ import com.fsck.k9.mail.filter.LineWrapOutputStream;
 import com.fsck.k9.mail.filter.PeekableInputStream;
 import com.fsck.k9.mail.filter.SmtpDataStuffing;
 import com.fsck.k9.mail.internet.CharsetSupport;
+import com.fsck.k9.mail.oauth.OAuth2AuthorizationCodeFlowTokenProvider;
 import com.fsck.k9.mail.oauth.OAuth2TokenProvider;
 import com.fsck.k9.mail.oauth.XOAuth2ChallengeParser;
 import com.fsck.k9.mail.ssl.TrustedSocketFactory;
@@ -216,7 +217,7 @@ public class SmtpTransport extends Transport {
     private boolean retryXoauthWithNewToken;
 
     public SmtpTransport(StoreConfig storeConfig, TrustedSocketFactory trustedSocketFactory,
-            OAuth2TokenProvider oauth2TokenProvider) throws MessagingException {
+            OAuth2TokenProvider oAuth2TokenProvider) throws MessagingException {
         ServerSettings settings;
         try {
             settings = decodeUri(storeConfig.getTransportUri());
@@ -234,7 +235,7 @@ public class SmtpTransport extends Transport {
         mPassword = settings.password;
         mClientCertificateAlias = settings.clientCertificateAlias;
         mTrustedSocketFactory = trustedSocketFactory;
-        oauthTokenProvider = oauth2TokenProvider;
+        oauthTokenProvider = oAuth2TokenProvider;
     }
 
     @Override
@@ -837,7 +838,7 @@ public class SmtpTransport extends Transport {
                 throw negativeResponse;
             }
 
-            oauthTokenProvider.invalidateAccessToken(username);
+            oauthTokenProvider.invalidateToken(username);
 
             if (!retryXoauthWithNewToken) {
                 handlePermanentFailure(negativeResponse);
@@ -871,14 +872,14 @@ public class SmtpTransport extends Transport {
             //Invalidate the token anyway but assume it's permanent.
             Timber.v(negativeResponseFromNewToken, "Authentication exception for new token, permanent error assumed");
 
-            oauthTokenProvider.invalidateAccessToken(username);
+            oauthTokenProvider.invalidateToken(username);
 
             handlePermanentFailure(negativeResponseFromNewToken);
         }
     }
 
     private void attemptXoauth2(String username) throws MessagingException, IOException {
-        String token = oauthTokenProvider.getToken(username, OAuth2TokenProvider.OAUTH2_TIMEOUT);
+        String token = oauthTokenProvider.getToken(username, OAuth2AuthorizationCodeFlowTokenProvider.OAUTH2_TIMEOUT);
         String authString = Authentication.computeXoauth(username, token);
         CommandResponse response = executeSensitiveCommand("AUTH XOAUTH2 %s", authString);
 
