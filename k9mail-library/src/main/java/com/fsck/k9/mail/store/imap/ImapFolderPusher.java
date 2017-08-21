@@ -117,31 +117,30 @@ class ImapFolderPusher {
                     }
 
                     connectionManager.stopIdle();
-                } else {
-                    if (response.getTag() == null) {
-                        if (response.size() > 1) {
-                            if (isUntaggedResponseSupported(response)) {
-                                wakeLock.acquire(PUSH_WAKE_LOCK_TIMEOUT);
+                } else if (response.getTag() == null) {
+                    if (response.size() > 1 && isUntaggedResponseSupported(response)) {
+                        wakeLock.acquire(PUSH_WAKE_LOCK_TIMEOUT);
 
-                                if (K9MailLib.isDebug()) {
-                                    Timber.d("Got useful async untagged response: %s for %s", response, getLogId());
-                                }
-
-                                synchronized (storedUntaggedResponses) {
-                                    storedUntaggedResponses.add(response);
-                                    if (!connectionManager.areMoreResponsesAvailable()) {
-                                        processStoredUntaggedResponses();
-                                    }
-                                }
-                            }
-                        } else if (response.isContinuationRequested()) {
-                            if (K9MailLib.isDebug()) {
-                                Timber.d("Idling %s", getLogId());
-                            }
-
-                            connectionManager.startAcceptingDoneContinuation();
-                            wakeLock.release();
+                        if (K9MailLib.isDebug()) {
+                            Timber.d("Got useful async untagged response: %s for %s", response, getLogId());
                         }
+
+                        synchronized (storedUntaggedResponses) {
+                            storedUntaggedResponses.add(response);
+                        }
+                    } else if (response.isContinuationRequested()) {
+                        if (K9MailLib.isDebug()) {
+                            Timber.d("Idling %s", getLogId());
+                        }
+
+                        connectionManager.startAcceptingDoneContinuation();
+                        wakeLock.release();
+                    }
+                }
+
+                synchronized (storedUntaggedResponses) {
+                    if (!connectionManager.areMoreResponsesAvailable()) {
+                        processStoredUntaggedResponses();
                     }
                 }
             }
@@ -373,9 +372,7 @@ class ImapFolderPusher {
                         untaggedResponses.size(), getLogId());
             }
 
-            for (int i = 0; i < untaggedResponses.size();i++) {
-                ImapResponse response = untaggedResponses.get(i);
-
+            for (ImapResponse response : untaggedResponses) {
                 if ((equalsIgnoreCase(response.get(1), "EXPUNGE") && handleExpungeResponse(response)) ||
                         (equalsIgnoreCase(response.get(1), "FETCH") && handleFetchResponse(response)) ||
                         (equalsIgnoreCase(response.get(1), "EXISTS") && handleExistsResponse()) ||
