@@ -60,7 +60,7 @@ public class ImapFolderPusherTest {
     @Mock
     private ImapFolder folder;
     @Mock
-    private ImapConnection connection;
+    private IdleConnectionManager connectionManager;
     @Mock
     private PushReceiver pushReceiver;
     @Captor
@@ -108,8 +108,9 @@ public class ImapFolderPusherTest {
         latch2.countDown();
         latch3.await();
 
-        InOrder inOrder = inOrder(connection, folder);
-        inOrder.verify(connection).sendContinuation("DONE");
+        InOrder inOrder = inOrder(connectionManager, folder);
+        inOrder.verify(connectionManager).startAcceptingDoneContinuation();
+        inOrder.verify(connectionManager).stopIdle();
         inOrder.verify(folder).executeSimpleCommand(eq(Commands.IDLE), any(UntaggedHandler.class));
 
         folderPusher.stop();
@@ -118,7 +119,6 @@ public class ImapFolderPusherTest {
     @Test
     public void pushRunnable_withAccountSetToPushPollOnConnect_shouldSyncFolderOnConnect() throws Exception {
         when(storeConfig.isPushPollOnConnect()).thenReturn(true);
-        when(folder.getConnection()).thenReturn(null).thenReturn(connection);
         setupAndRunFolderPusherWithSingleResponse(null);
 
         verify(pushReceiver).syncFolder(FOLDER_NAME);
@@ -191,7 +191,7 @@ public class ImapFolderPusherTest {
     @Test
     public void pushRunnable_withFetchResponseForLocallyAvailableMessageAndQresyncEnabled_shouldUpdateLocalMessage()
             throws Exception {
-        when(connection.isQresyncEnabled()).thenReturn(true);
+        when(folder.doesConnectionSupportQresync()).thenReturn(true);
         String response = String.format(Locale.US, "* %d FETCH (UID 99 FLAGS (\\Seen) MODSEQ (190))",
                 SMALLEST_SEQ_NUM + 1);
         setupAndRunFolderPusherWithSingleResponse(response);
@@ -207,7 +207,7 @@ public class ImapFolderPusherTest {
     @Test
     public void pushRunnable_withFetchResponseForLocallyUnavailableMessageAndQresyncEnabled_shouldNotDoAnything()
             throws Exception {
-        when(connection.isQresyncEnabled()).thenReturn(true);
+        when(folder.doesConnectionSupportQresync()).thenReturn(true);
         String response = String.format(Locale.US, "* %d FETCH (UID 99 FLAGS (\\Seen) MODSEQ (190))",
                 SMALLEST_SEQ_NUM - 1);
         setupAndRunFolderPusherWithSingleResponse(response);
@@ -287,12 +287,12 @@ public class ImapFolderPusherTest {
     private void configureFolder() throws IOException, MessagingException {
         when(folder.getName()).thenReturn(FOLDER_NAME);
         when(folder.getStore()).thenReturn(store);
-        when(folder.getConnection()).thenReturn(connection);
+        when(folder.createIdleConnectionManager()).thenReturn(connectionManager);
         when(folder.getUidNext()).thenReturn(UID_NEXT);
         when(folder.getMessageCount()).thenReturn(SMALLEST_SEQ_NUM + DISPLAY_COUNT - 1);
-        when(connection.isIdleCapable()).thenReturn(true);
-        when(connection.areMoreResponsesAvailable()).thenReturn(false);
-        when(connection.isQresyncEnabled()).thenReturn(false);
+        when(connectionManager.hasIdleCapability()).thenReturn(true);
+        when(connectionManager.areMoreResponsesAvailable()).thenReturn(false);
+        when(folder.doesConnectionSupportQresync()).thenReturn(false);
     }
 
     private void setupAndRunFolderPusherWithSingleResponse(final String response) throws Exception {
