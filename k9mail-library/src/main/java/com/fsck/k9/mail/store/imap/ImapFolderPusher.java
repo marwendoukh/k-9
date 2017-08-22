@@ -334,6 +334,9 @@ class ImapFolderPusher {
 
         private boolean openConnectionIfNecessary() throws IOException, MessagingException {
             boolean openedConnection = !folder.isOpen();
+            if (idling) {
+                connectionManager.stopIdle();
+            }
             folder.open(OPEN_MODE_RO);
             connectionManager = folder.createIdleConnectionManager();
 
